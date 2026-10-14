@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Last Man Standing</title>
+    <link rel="stylesheet" href="./style/style.css">
+</head>
+
+<body>
+
+    <div class="app-container">
+        <!-- Main Menu Screen -->
+        <div id="view-main-menu" class="view">
+            <h1 class="game-title">LAST MAN STANDING</h1>
+            <p class="game-tagline">A very classical game by Coach Andrew</p>
+            <div class="menu-grid">
+                <button id="btn-goto-add-players" class="menu-btn primary">➕ Add Players</button>
+                <button id="btn-goto-settings" class="menu-btn">⚙️ Player Settings</button>
+                <button id="btn-goto-bonus" class="menu-btn">🎁 Bonus Settings</button>
+                <button id="btn-goto-dashboard" class="menu-btn accent">📺 Dashboard</button>
+                <button id="btn-goto-panel" class="menu-btn accent">📱 Control Panel</button>
+            </div>
+        </div>
+
+        <!-- Add Players Screen (Placeholder) -->
+        <!-- Add Players Screen -->
+        <!-- Add Players Screen -->
+        <div id="view-add-players" class="view hidden">
+            <header class="view-header">
+                <h2>Add Players</h2>
+                <button class="btn-back">⬅️ Main Menu</button>
+            </header>
+            <div class="view-content player-screen-layout">
+                <!-- Form to add player -->
+                <form id="add-player-form" class="player-form">
+                    <div class="form-group">
+                        <label for="player-name">Player Name</label>
+                        <input type="text" id="player-name" placeholder="Enter name..." required autocomplete="off">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="player-icon">Icon / Emoji</label>
+                        <select id="player-icon" class="form-select">
+                            <option value="❤️">❤️</option>
+                            <option value="⚡">⚡</option>
+                            <option value="❄">❄</option>
+                            <option value="💎">💎</option>
+                            <option value="🔋">🔋</option>
+                            <option value="🪙">🪙</option>
+                            <option value="🛡">🛡</option>
+                            <option value="🧬">🧬</option>
+                            <option value="🐎">🐎</option>
+                            <option value="🦣">🦣</option>
+                            <option value="🦏">🦏</option>
+                            <option value="🦖">🦖</option>
+                            <option value="🌻">🌻</option>
+                            <option value="🌼">🌼</option>
+                            <option value="🌷">🌷</option>
+                            <option value="🍎">🍎</option>
+                            <option value="🧀">🧀</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="player-target">Target (3 decimals)</label>
+                        <input type="number" id="player-target" step="0.001" value="10.000">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="player-bonus">Bonus</label>
+                        <input type="number" id="player-bonus" value="0">
+                    </div>
+
+                    <button type="submit" class="menu-btn primary">Save Player</button>
+                </form>
+
+                <!-- Live list of players loaded from database -->
+                <div class="player-list-container">
+                    <h3>Registered Players</h3>
+                    <ul id="players-ul" class="players-list">
+                        <!-- Dynamically populated via sockets.js / players.js -->
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Player Settings Screen (Placeholder) -->
+        <!-- Player Settings Screen -->
+        <div id="view-player-settings" class="view hidden">
+            <header class="view-header">
+                <h2>Player Settings</h2>
+                <button class="btn-back">⬅️ Main Menu</button>
+            </header>
+            <div class="view-content">
+                <div class="settings-container">
+                    <h3>Configure Players</h3>
+                    <div id="settings-players-list" class="settings-list">
+                        <!-- Dynamically populated via settings.js -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bonus Settings Screen (Placeholder) -->
+        <div id="view-bonus-settings" class="view hidden">
+            <header class="view-header">
+                <h2>Bonus Settings</h2>
+                <button class="btn-back">⬅️ Main Menu</button>
+            </header>
+            <div class="view-content">
+                <!-- Bonus settings content -->
+            </div>
+        </div>
+
+        <!-- Dashboard Screen (Placeholder) -->
+        <!-- Dashboard Screen -->
+        <!-- Dashboard Screen -->
+        <div id="view-dashboard" class="view hidden">
+            <header class="view-header">
+                <div class="dashboard-title-group">
+                    <h2>LAST MAN STANDING</h2>
+                    <span class="dashboard-tagline">A very classical game by <span class="author-highlight">Coach Andrew</span></span>
+                </div>
+                <div class="dashboard-header-actions">
+                    <button id="btn-toggle-fullscreen" class="menu-btn">⛶ Fullscreen</button>
+                    <button id="btn-toggle-view" class="menu-btn">🔲 Toggle View</button>
+                    <button id="btn-next-round" class="menu-btn primary">🔄 Next Round</button>
+                    <button class="btn-back menu-btn">⬅️ Main Menu</button>
+                </div>
+            </header>
+            <div class="view-content">
+                <div class="dashboard-container">
+                    <div id="dashboard-players-grid" class="dashboard-grid">
+                        <!-- Dynamically populated via dashboard.js -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Control Panel Screen (Placeholder) -->
+        <div id="view-control-panel" class="view hidden">
+            <header class="view-header">
+                <h2>Tablet Control Panel</h2>
+                <button class="btn-back">⬅️ Main Menu</button>
+            </header>
+            <div class="view-content">
+                <!-- Tablet control actions -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Socket.io & App Scripts -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="./js/socketsio.js"></script>
+    <script src="./js/players.js"></script>
+    <script src="./js/settings.js"></script>
+    <script src="./js/dashboard.js"></script>
+    <script src="./js/index.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,303 @@
+// client/js/dashboard.js
+
+
+
+document.addEventListener('DOMContentLoaded', () => {
+
+    const socket = io();
+
+    const dashboardGrid = document.getElementById('dashboard-players-grid');
+
+    const btnNextRound = document.getElementById('btn-next-round');
+
+
+
+    // Keep track of players locally so we can modify live before saving on next round
+
+    let localPlayers = [];
+
+
+
+    function renderDashboard(players) {
+
+        if (!dashboardGrid) return;
+
+        localPlayers = JSON.parse(JSON.stringify(players)); // deep copy
+
+        dashboardGrid.innerHTML = '';
+
+
+
+        if (localPlayers.length === 0) {
+
+            dashboardGrid.innerHTML = '<p class="no-players">No players registered yet. Add players from the main menu!</p>';
+
+            return;
+
+        }
+
+
+
+        localPlayers.forEach((p, index) => {
+
+            const card = document.createElement('div');
+
+            card.className = `dashboard-card ${p.hasActed ? 'acted' : ''}`;
+
+            card.setAttribute('data-index', index);
+
+
+
+            // Repeat the player icon according to their current life count
+
+            const lifeIcons = p.icon.repeat(Math.max(0, p.life));
+
+            const formattedTarget = Number(p.target).toFixed(3);
+
+
+
+            // Determine active/highlight states for buttons if they have acted
+
+            const successClass = p.lastAction === 'success'
+
+                ? 'menu-btn primary btn-success action-selected'
+
+                : 'menu-btn primary btn-success';
+
+           
+
+            const failClass = p.lastAction === 'fail'
+
+                ? 'menu-btn accent btn-fail action-selected'
+
+                : 'menu-btn accent btn-fail';
+
+
+
+            card.innerHTML = `
+
+                <div class="dash-card-header">
+
+                    <span class="dash-p-name">${p.name}</span>
+
+                    <span class="dash-p-target">Target: ${formattedTarget}</span>
+
+                </div>
+
+                <div class="dash-life-display">
+
+                    <div class="dash-icons-row">${lifeIcons || '💀 (Eliminated)'}</div>
+
+                    <span class="dash-life-count">Life: ${p.life} | Bonus: ${p.bonus}/3</span>
+
+                </div>
+
+                <div class="dash-actions">
+
+                    <button class="${successClass}" data-index="${index}" ${p.hasActed ? 'disabled' : ''}>✅ Success</button>
+
+                    <button class="${failClass}" data-index="${index}" ${p.hasActed ? 'disabled' : ''}>❌ Fail</button>
+
+                </div>
+
+            `;
+
+            dashboardGrid.appendChild(card);
+
+        });
+
+    }
+
+
+
+    // Load and update listeners
+
+    socket.on('load-players', (players) => {
+
+        const initialized = players.map(p => ({ ...p, hasActed: false, lastAction: null }));
+
+        renderDashboard(initialized);
+
+    });
+
+
+
+    socket.on('update-players', (players) => {
+
+        const initialized = players.map(serverP => {
+
+            const existing = localPlayers.find(lp => lp.name === serverP.name);
+
+            return {
+
+                ...serverP,
+
+                hasActed: existing ? existing.hasActed : false,
+
+                lastAction: existing ? existing.lastAction : null
+
+            };
+
+        });
+
+        renderDashboard(initialized);
+
+    });
+
+
+
+    // Handle Success / Fail clicks per player card
+
+    if (dashboardGrid) {
+
+        dashboardGrid.addEventListener('click', (e) => {
+
+            const index = parseInt(e.target.getAttribute('data-index'), 10);
+
+            if (isNaN(index) || !localPlayers[index]) return;
+
+
+
+            const player = localPlayers[index];
+
+            if (player.hasActed) return;
+
+
+
+            if (e.target.classList.contains('btn-success')) {
+
+                player.bonus = Math.min(3, (player.bonus || 0) + 1);
+
+                player.hasActed = true;
+
+                player.lastAction = 'success';
+
+                renderDashboard(localPlayers);
+
+            } else if (e.target.classList.contains('btn-fail')) {
+
+                player.life = Math.max(0, player.life - 1);
+
+                player.hasActed = true;
+
+                player.lastAction = 'fail';
+
+                renderDashboard(localPlayers);
+
+            }
+
+        });
+
+    }
+
+
+
+    // Handle Next Round click (Batch save to DB and reset round locks)
+
+    if (btnNextRound) {
+
+        btnNextRound.addEventListener('click', () => {
+
+            btnNextRound.textContent = '💾 Saving Round...';
+
+            btnNextRound.disabled = true;
+
+
+
+            socket.emit('batch-update-players', localPlayers);
+
+
+
+            setTimeout(() => {
+
+                // Reset locks and selections for all players for the next round
+
+                localPlayers = localPlayers.map(p => ({
+
+                    ...p,
+
+                    hasActed: false,
+
+                    lastAction: null
+
+                }));
+
+
+
+                renderDashboard(localPlayers);
+
+
+
+                btnNextRound.textContent = '🔄 Next Round';
+
+                btnNextRound.disabled = false;
+
+            }, 800);
+
+        });
+
+    }
+
+
+
+    // --- View Toggle Controller (Compact 5-Col vs Large 3-Col) ---
+
+    const toggleBtn = document.getElementById('btn-toggle-view');
+
+    if (toggleBtn && dashboardGrid) {
+
+        toggleBtn.addEventListener('click', () => {
+
+            dashboardGrid.classList.toggle('grid-large');
+
+            if (dashboardGrid.classList.contains('grid-large')) {
+
+                toggleBtn.textContent = '🔳 Compact View';
+
+            } else {
+
+                toggleBtn.textContent = '🔲 Large View';
+
+            }
+
+        });
+
+    }
+
+
+
+    // --- Fullscreen Toggle Controller ---
+
+    const fullscreenBtn = document.getElementById('btn-toggle-fullscreen');
+
+    if (fullscreenBtn) {
+
+        fullscreenBtn.addEventListener('click', () => {
+
+            if (!document.fullscreenElement) {
+
+                document.documentElement.requestFullscreen().catch(err => {
+
+                    console.error(`Error attempting to enable fullscreen: ${err.message}`);
+
+                });
+
+                fullscreenBtn.textContent = '↙️ Exit Fullscreen';
+
+            } else {
+
+                if (document.exitFullscreen) {
+
+                    document.exitFullscreen();
+
+                    fullscreenBtn.textContent = '⛶ Fullscreen';
+
+                }
+
+            }
+
+        });
+
+    }
+
+}); 
