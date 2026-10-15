@@ -54,7 +54,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <input type="number" class="setting-bonus" data-name="${p.name}" value="${p.bonus}">
                     </div>
                 </div>
-                <button class="menu-btn primary btn-save-settings" data-name="${p.name}">💾 Save ${p.name}</button>
+                <button class="menu-btn primary btn-save-settings" data-name="${p.name}" data-saving="false">💾 Save ${p.name}</button>
             `;
             settingsListContainer.appendChild(card);
         });
@@ -69,26 +69,54 @@ document.addEventListener('DOMContentLoaded', () => {
         renderSettingsList(players);
     });
 
+    // Listen for server-side save errors and update the specific button's visual state
+    socket.on('error-message', (msg) => {
+        console.error('Server error:', msg);
+        document.querySelectorAll('.btn-save-settings').forEach(btn => {
+            if (btn.dataset.saving === 'true') {
+                const name = btn.getAttribute('data-name');
+                btn.textContent = '❌ Failed, try again';
+                btn.style.backgroundColor = '#e74c3c';
+                btn.dataset.saving = 'false';
+                btn.disabled = false;
+                setTimeout(() => {
+                    btn.textContent = `💾 Save ${name}`;
+                    btn.style.backgroundColor = '';
+                }, 2500);
+            }
+        });
+    });
+
     // Handle saving individual player settings
     if (settingsListContainer) {
         settingsListContainer.addEventListener('click', (e) => {
             if (e.target.classList.contains('btn-save-settings')) {
-                const name = e.target.getAttribute('data-name');
-                const card = e.target.closest('.settings-card');
+                const btn = e.target;
+                const name = btn.getAttribute('data-name');
+                const card = btn.closest('.settings-card');
 
                 const icon = card.querySelector('.setting-icon').value;
                 const life = parseInt(card.querySelector('.setting-life').value, 10) || 10;
                 const target = parseFloat(card.querySelector('.setting-target').value) || 10.000;
                 const bonus = parseInt(card.querySelector('.setting-bonus').value, 10) || 0;
 
+                // Mark button as actively saving
+                btn.dataset.saving = 'true';
+                btn.textContent = '⏳ Saving...';
+
                 // Emit update event to backend socket
                 socket.emit('update-player-settings', { name, icon, life, target, bonus });
                 
-                // Visual confirmation hint
-                e.target.textContent = '✅ Saved!';
+                // Visual confirmation hint (assumes success unless overridden by error-message)
                 setTimeout(() => {
-                    e.target.textContent = `💾 Save ${name}`;
-                }, 1500);
+                    if (btn.dataset.saving === 'true') {
+                        btn.dataset.saving = 'false';
+                        btn.textContent = '✅ Saved!';
+                        setTimeout(() => {
+                            btn.textContent = `💾 Save ${name}`;
+                        }, 1500);
+                    }
+                }, 800);
             }
         });
     }

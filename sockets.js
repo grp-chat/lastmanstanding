@@ -66,32 +66,29 @@ module.exports = (io) => {
                 );
             };
 
-            try {
-                // Attempt first execution
-                await performUpdate();
-                console.log(`⚙️ Player settings updated for: ${name}`);
+            let retries = 2; // Try up to 2 retries (3 attempts total)
+            while (retries >= 0) {
+                try {
+                    await performUpdate();
+                    console.log(`⚙️ Player settings updated for: ${name}`);
 
-                const result = await pool.query('SELECT * FROM players ORDER BY name ASC');
-                io.emit('update-players', result.rows);
-
-            } catch (err) {
-                // If it's a transient ECONNRESET proxy drop, retry once automatically
-                if (err.code === 'ECONNRESET') {
-                    console.warn(`⚠️ Proxy dropped connection (ECONNRESET) for player "${name}". Retrying once...`);
-                    try {
-                        await performUpdate();
-                        console.log(`⚙️ Player settings updated successfully on retry for: ${name}`);
-
-                        const result = await pool.query('SELECT * FROM players ORDER BY name ASC');
-                        io.emit('update-players', result.rows);
-                        return;
-                    } catch (retryErr) {
-                        err = retryErr; // Fall through to main error handler if retry fails
+                    const result = await pool.query('SELECT * FROM players ORDER BY name ASC');
+                    io.emit('update-players', result.rows);
+                    return; // Success! Exit loop.
+                } catch (err) {
+                    if (err.code === 'ECONNRESET' && retries > 0) {
+                        retries--;
+                        console.warn(`⚠️ Proxy dropped connection (ECONNRESET) for player "${name}". Retries left: ${retries}. Waiting for pool refresh...`);
+                        
+                        // Small pause to allow the pool to clean up the dead socket and dial a fresh one
+                        await new Promise(resolve => setTimeout(resolve, 300));
+                        continue;
                     }
-                }
 
-                console.error(`❌ Error updating player settings for "${name}":`, err.message);
-                socket.emit('error-message', `Failed to update player settings for ${name}`);
+                    console.error(`❌ Error updating player settings for "${name}":`, err.message);
+                    socket.emit('error-message', `Failed to update player settings for ${name}`);
+                    return;
+                }
             }
         });
 
