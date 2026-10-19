@@ -116,6 +116,13 @@ module.exports = (io) => {
             }
         });
 
+        // 🟢 ADD THIS NEW LISTENER HERE:
+        // 6. Listen for 'trigger-next-round' remote signal from the control panel
+        socket.on('trigger-next-round', () => {
+            console.log(`📱 Remote "Next Round" triggered by control panel (${socket.id}). Broadcasting to dashboard...`);
+            io.emit('remote-next-round');
+        });
+
         // Handle client disconnect
         socket.on('disconnect', () => {
             console.log(`❌ Player disconnected: ${socket.id}`);
