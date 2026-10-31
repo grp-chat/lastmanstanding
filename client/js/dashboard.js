@@ -8,9 +8,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Keep track of players locally
     let localPlayers = [];
-    
+
     // Flag to track when we are waiting for a database save confirmation
     let isSavingRound = false;
+
+    // Safety fallback timer reference
+    let saveTimeout = null;
 
     function renderDashboard(players) {
         if (!dashboardGrid) return;
@@ -34,12 +37,12 @@ document.addEventListener('DOMContentLoaded', () => {
             // Check target change state safely for container glow
             const targetGlowClass = p.targetChanged ? 'target-highlight-glow' : '';
 
-            const successClass = p.lastAction === 'success' 
-                ? 'menu-btn primary btn-success action-selected' 
+            const successClass = p.lastAction === 'success'
+                ? 'menu-btn primary btn-success action-selected'
                 : 'menu-btn primary btn-success';
-            
-            const failClass = p.lastAction === 'fail' 
-                ? 'menu-btn accent btn-fail action-selected' 
+
+            const failClass = p.lastAction === 'fail'
+                ? 'menu-btn accent btn-fail action-selected'
                 : 'menu-btn accent btn-fail';
 
             card.innerHTML = `
@@ -48,7 +51,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="dash-p-target ${targetGlowClass}">Target: ${formattedTarget}</span>
                 </div>
                 <div class="dash-life-display">
-                    <div class="dash-icons-row">${lifeIcons || '💀 (Eliminated)'}</div>
+                    <div class="dash-icons-row">${lifeIcons || '(Eliminated)'}</div>
                     <span class="dash-life-count">Life: ${p.life} | Bonus: ${p.bonus}/3</span>
                 </div>
                 <div class="dash-actions">
@@ -60,7 +63,35 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Load players safely
+    // Function to reset all player action locks and re-enable buttons for the new round
+    function resetRoundLocks() {
+        // Clear any active safety timeout since we successfully reset
+        if (saveTimeout) {
+            clearTimeout(saveTimeout);
+            saveTimeout = null;
+        }
+
+        localPlayers = localPlayers.map(p => ({
+            ...p,
+            hasActed: false,
+            lastAction: null,
+            targetChanged: false
+        }));
+
+        isSavingRound = false;
+
+        if (btnNextRound) {
+            btnNextRound.textContent = '🔄 Next Round';
+            btnNextRound.disabled = false;
+        }
+
+        renderDashboard(localPlayers);
+        console.log('🔄 Round locks reset. Buttons are clickable again!');
+    }
+
+    // --- Socket Event Listeners ---
+
+    // Load players safely on initial connection/sync
     socket.on('load-players', (players) => {
         localPlayers = players.map(p => ({ ...p, hasActed: false, lastAction: null, targetChanged: false }));
         renderDashboard(localPlayers);
@@ -70,40 +101,30 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('update-players', (newPlayers) => {
         localPlayers = newPlayers.map(serverP => {
             const existing = localPlayers.find(lp => lp.name === serverP.name);
-            
-            // Check if target changed from previous local state
             const targetChanged = existing && Number(existing.target) !== Number(serverP.target);
-
-            // If we were waiting for a next-round save, clear actions/locks for the new round!
-            const hasActed = isSavingRound ? false : (existing ? existing.hasActed : false);
-            const lastAction = isSavingRound ? null : (existing ? existing.lastAction : null);
 
             return {
                 ...serverP,
-                hasActed: hasActed,
-                lastAction: lastAction,
+                hasActed: existing ? existing.hasActed : false,
+                lastAction: existing ? existing.lastAction : null,
                 targetChanged: targetChanged || (existing ? existing.targetChanged : false)
             };
         });
 
-        // If we were saving, the round save is now 100% confirmed by the DB broadcast!
+        // If we were in the middle of saving, confirm completion and reset locks
         if (isSavingRound) {
-            isSavingRound = false;
-            if (btnNextRound) {
-                btnNextRound.textContent = '🔄 Next Round';
-                btnNextRound.disabled = false;
-            }
             console.log('✅ Round successfully saved and synced from database!');
+            resetRoundLocks();
+        } else {
+            renderDashboard(localPlayers);
+            
         }
-
-        renderDashboard(localPlayers);
 
         // Clear target container glow after 10 seconds for any players who changed targets
         localPlayers.forEach(p => {
             if (p.targetChanged) {
                 setTimeout(() => {
                     p.targetChanged = false;
-                    // Safely remove class from DOM element if card still exists
                     const card = dashboardGrid.querySelector(`[data-player-name="${p.name}"]`);
                     if (card) {
                         const targetEl = card.querySelector('.dash-p-target');
@@ -113,6 +134,39 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     });
+
+    // Listen for remote 'Next Round' request from the server (triggered by the tablet)
+    // Listen for remote 'Next Round' request directly from the tablet control panel
+    socket.on('request-dashboard-save', () => {
+        console.log('📡 Received request-dashboard-save from server. Executing direct round save...');
+        
+        if (isSavingRound) {
+            console.warn('⚠️ Already saving round, ignoring duplicate remote request.');
+            return;
+        }
+
+        isSavingRound = true;
+        
+        if (btnNextRound) {
+            btnNextRound.textContent = '💾 Saving Round...';
+            btnNextRound.disabled = true;
+        }
+
+        console.log('🚀 Sending batch update for current localPlayers state (via remote):', localPlayers.map(p => `${p.name}: life=${p.life}`));
+        // socket.emit('batch-update-players', localPlayers);
+        resetRoundLocks();
+        
+
+        // 🛡️ Safety Fallback Timer
+        saveTimeout = setTimeout(() => {
+            if (isSavingRound) {
+                console.warn('⚠️ Safety fallback: Server response timed out on remote save. Force-releasing locks.');
+                // resetRoundLocks();
+            }
+        }, 5000);
+    });
+
+    // --- DOM Event Listeners ---
 
     // Handle Success / Fail clicks per player card
     if (dashboardGrid) {
@@ -140,25 +194,28 @@ document.addEventListener('DOMContentLoaded', () => {
     // Handle Next Round click (Batch save to DB and wait for server confirmation)
     if (btnNextRound) {
         btnNextRound.addEventListener('click', () => {
-            if (isSavingRound) return; // Prevent double clicking
+            if (isSavingRound) {
+                console.warn('⚠️ Already saving round, ignoring extra click.');
+                return;
+            }
 
+            isSavingRound = true;
             btnNextRound.textContent = '💾 Saving Round...';
             btnNextRound.disabled = true;
-            isSavingRound = true; // Flag that we are waiting for DB confirmation
 
-            // Send batch update to backend socket
+            console.log('🚀 Sending batch update for current localPlayers state:', localPlayers.map(p => `${p.name}: life=${p.life}`));
             socket.emit('batch-update-players', localPlayers);
+
+            // 🛡️ Safety Fallback: If the server response takes longer than 5 seconds, 
+            // force-unlock the UI automatically so it never stays frozen.
+            saveTimeout = setTimeout(() => {
+                if (isSavingRound) {
+                    console.warn('⚠️ Safety fallback: Server response timed out. Force-releasing locks.');
+                    resetRoundLocks();
+                }
+            }, 5000);
         });
     }
-
-    // Listen for remote 'Next Round' trigger from the tablet control panel
-    socket.on('remote-next-round', () => {
-        console.log('📡 Received remote "Next Round" trigger from control panel.');
-        if (btnNextRound && !btnNextRound.disabled) {
-            // Programmatically trigger the same click handler logic
-            btnNextRound.click();
-        }
-    });
 
     // --- View Toggle Controller ---
     const toggleBtn = document.getElementById('btn-toggle-view');

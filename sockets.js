@@ -57,10 +57,10 @@ module.exports = (io) => {
                 await pool.query(
                     `UPDATE players SET target = $1, icon = $2, bonus = $3, life = $4 WHERE name = $5`,
                     [
-                        target !== undefined ? target : 10.000, 
-                        icon || '❤️', 
-                        bonus !== undefined ? bonus : 0, 
-                        life !== undefined ? life : 10, 
+                        target !== undefined ? target : 10.000,
+                        icon || '❤️',
+                        bonus !== undefined ? bonus : 0,
+                        life !== undefined ? life : 10,
                         name
                     ]
                 );
@@ -79,7 +79,7 @@ module.exports = (io) => {
                     if (err.code === 'ECONNRESET' && retries > 0) {
                         retries--;
                         console.warn(`⚠️ Proxy dropped connection (ECONNRESET) for player "${name}". Retries left: ${retries}. Waiting for pool refresh...`);
-                        
+
                         // Small pause to allow the pool to clean up the dead socket and dial a fresh one
                         await new Promise(resolve => setTimeout(resolve, 300));
                         continue;
@@ -92,35 +92,61 @@ module.exports = (io) => {
             }
         });
 
-        // 5. Listen for 'batch-update-players' event from the dashboard (Next Round sync)
+        // Track server-side saving state to prevent overlapping double-saves
+
+
+        // 5. Listen for 'batch-update-players' (The ONE and ONLY place where saves happen)
+        // Inside sockets.js
+
+        let isServerSaving = false;
+
         socket.on('batch-update-players', async (playersData) => {
+            if (isServerSaving) {
+                console.warn('⚠️ [SERVER] Save already in progress. Ignoring duplicate request.');
+                return;
+            }
+
+            isServerSaving = true;
+            console.log('📥 [SERVER] Saving round data to database...');
+
             try {
-                for (const p of playersData) {
-                    await pool.query(
-                        `UPDATE players SET life = $1, bonus = $2 WHERE name = $3`,
-                        [
-                            p.life !== undefined ? p.life : 10, 
-                            p.bonus !== undefined ? p.bonus : 0, 
-                            p.name
-                        ]
+                if (playersData && Array.isArray(playersData)) {
+                    // 1. Await EVERY single database update query to finish completely
+                    await Promise.all(
+                        playersData.map(async (p) => {
+                            const targetLife = p.life !== undefined ? p.life : 10;
+                            const targetBonus = p.bonus !== undefined ? p.bonus : 0;
+
+                            return pool.query(
+                                `UPDATE players SET life = $1, bonus = $2 WHERE name = $3`,
+                                [targetLife, targetBonus, p.name]
+                            );
+                        })
                     );
                 }
-                console.log(`🔄 Batch update successful for Next Round.`);
 
+                console.log('🔄 [SERVER] Batch update successfully committed to DB.');
+
+                // 2. ONLY after the database promises are fully resolved, fetch the fresh data
                 const result = await pool.query('SELECT * FROM players ORDER BY name ASC');
-                io.emit('update-players', result.rows);
+
+                // 3. Send the confirmation back to the client so resetRoundLocks() runs safely
+                socket.emit('update-players', result.rows);
 
             } catch (err) {
-                console.error('❌ Error during batch update for next round:', err);
+                console.error('❌ [SERVER] Error during batch update:', err);
                 socket.emit('error-message', 'Failed to save round progress');
+            } finally {
+                // 4. Release the lock
+                isServerSaving = false;
             }
         });
 
-        // 🟢 ADD THIS NEW LISTENER HERE:
-        // 6. Listen for 'trigger-next-round' remote signal from the control panel
+        // 6. Listen for 'trigger-next-round' from the tablet control panel
         socket.on('trigger-next-round', () => {
-            console.log(`📱 Remote "Next Round" triggered by control panel (${socket.id}). Broadcasting to dashboard...`);
-            io.emit('remote-next-round');
+            console.log(`📱 [SERVER] Remote "Next Round" signal received from tablet. Requesting dashboard save...`);
+            // Tell the TV dashboard to execute its save using its current local state
+            io.emit('request-dashboard-save');
         });
 
         // Handle client disconnect
